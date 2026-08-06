@@ -95,6 +95,74 @@ const filterSchema = z
     'Filtro estructurado (nunca SQL). Se traduce a filter[campo][operador]=valor en la API V8.',
   )
 
+const pageField = z.number().int().min(1).optional().describe('Número de página (empieza en 1).')
+
+const pageSizeField = z
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_PAGE_SIZE)
+  .optional()
+  .describe(`Registros por página (máximo ${MAX_PAGE_SIZE}).`)
+
+const moduleFieldsInput = z.object({
+  module: moduleField,
+  name_contains: z
+    .string()
+    .optional()
+    .describe('Filtra los campos cuyo nombre o etiqueta contenga este texto.'),
+})
+
+const entryInput = z.object({
+  module: moduleField,
+  id: idField,
+  fields: fieldsField,
+})
+
+const entryListInput = z.object({
+  module: moduleField,
+  filter: filterSchema.optional(),
+  sort: z
+    .string()
+    .optional()
+    .describe('Campo de orden. Prefija con "-" para descendente, p.ej. "-date_entered".'),
+  page: pageField,
+  page_size: pageSizeField,
+  fields: fieldsField,
+})
+
+const relationshipsInput = z.object({
+  module: moduleField,
+  id: idField,
+  relationship: z
+    .string()
+    .describe('Nombre del link field / relación tal y como aparece en el módulo.'),
+  page: pageField,
+  page_size: pageSizeField,
+  sort: z.string().optional().describe('Campo de orden, "-campo" para descendente.'),
+})
+
+const createInput = z.object({
+  module: moduleField,
+  attributes: z
+    .record(z.string(), z.unknown())
+    .describe('Pares campo→valor con los datos del nuevo registro.'),
+})
+
+const updateInput = z.object({
+  module: moduleField,
+  id: idField,
+  attributes: z.record(z.string(), z.unknown()).describe('Pares campo→valor a modificar.'),
+})
+
+const setRelationshipInput = z.object({
+  module: moduleField,
+  id: idField,
+  relationship: z.string().describe('Link field del módulo origen.'),
+  related_module: z.string().describe('Módulo del registro relacionado.'),
+  related_id: z.string().describe('Id del registro relacionado.'),
+})
+
 export function registerSinergiaTools(server: ToolServer): void {
   // -------------------------------------------------------------------------
   // Lectura
@@ -117,15 +185,9 @@ export function registerSinergiaTools(server: ToolServer): void {
       title: 'Campos de un módulo',
       description:
         'Devuelve la definición de campos de un módulo (nombre técnico, tipo, obligatoriedad, etiqueta y si es campo custom). Usa name_contains para no traerte los cientos de campos de los módulos grandes.',
-      inputSchema: z.object({
-        module: moduleField,
-        name_contains: z
-          .string()
-          .optional()
-          .describe('Filtra los campos cuyo nombre o etiqueta contenga este texto.'),
-      }),
-      },
-    guarded(async ({ module, name_contains }: { module: string; name_contains?: string }) =>
+      inputSchema: moduleFieldsInput,
+    },
+    guarded(async ({ module, name_contains }: z.infer<typeof moduleFieldsInput>) =>
       getModuleFields(module, name_contains),
     ),
   )
@@ -136,13 +198,9 @@ export function registerSinergiaTools(server: ToolServer): void {
       title: 'Obtener un registro',
       description:
         'Recupera un registro concreto de un módulo por su id. Incluye la lista de relaciones disponibles del registro, que puedes usar en get_relationships.',
-      inputSchema: z.object({
-        module: moduleField,
-        id: idField,
-        fields: fieldsField,
-      }),
+      inputSchema: entryInput,
     },
-    guarded(async ({ module, id, fields }: { module: string; id: string; fields?: string[] }) =>
+    guarded(async ({ module, id, fields }: z.infer<typeof entryInput>) =>
       getEntry(module, id, fields),
     ),
   )
@@ -153,33 +211,10 @@ export function registerSinergiaTools(server: ToolServer): void {
       title: 'Listar registros',
       description:
         `Lista registros de un módulo con filtros estructurados, orden y paginación. El tamaño de página se limita a ${MAX_PAGE_SIZE}. Los registros borrados se excluyen automáticamente.`,
-      inputSchema: z.object({
-        module: moduleField,
-        filter: filterSchema.optional(),
-        sort: z
-          .string()
-          .optional()
-          .describe('Campo de orden. Prefija con "-" para descendente, p.ej. "-date_entered".'),
-        page: z.number().int().min(1).optional().describe('Número de página (empieza en 1).'),
-        page_size: z
-          .number()
-          .int()
-          .min(1)
-          .max(MAX_PAGE_SIZE)
-          .optional()
-          .describe(`Registros por página (máximo ${MAX_PAGE_SIZE}).`),
-        fields: fieldsField,
-      }),
+      inputSchema: entryListInput,
     },
     guarded(
-      async (args: {
-        module: string
-        filter?: { operator?: 'and' | 'or'; conditions: Array<{ field: string; operator: (typeof FILTER_OPERATORS)[number]; value: string | number | boolean }> }
-        sort?: string
-        page?: number
-        page_size?: number
-        fields?: string[]
-      }) =>
+      async (args: z.infer<typeof entryListInput>) =>
         getEntryList({
           module: args.module,
           filter: args.filter,
@@ -197,32 +232,10 @@ export function registerSinergiaTools(server: ToolServer): void {
       title: 'Registros relacionados',
       description:
         'Devuelve los registros relacionados con uno dado a través de un link field (p.ej. "contacts", "stic_contacts_relationships"). Los nombres válidos salen en el campo relationships_disponibles de get_entry.',
-      inputSchema: z.object({
-        module: moduleField,
-        id: idField,
-        relationship: z
-          .string()
-          .describe('Nombre del link field / relación tal y como aparece en el módulo.'),
-        page: z.number().int().min(1).optional().describe('Número de página (empieza en 1).'),
-        page_size: z
-          .number()
-          .int()
-          .min(1)
-          .max(MAX_PAGE_SIZE)
-          .optional()
-          .describe(`Registros por página (máximo ${MAX_PAGE_SIZE}).`),
-        sort: z.string().optional().describe('Campo de orden, "-campo" para descendente.'),
-      }),
+      inputSchema: relationshipsInput,
     },
     guarded(
-      async (args: {
-        module: string
-        id: string
-        relationship: string
-        page?: number
-        page_size?: number
-        sort?: string
-      }) =>
+      async (args: z.infer<typeof relationshipsInput>) =>
         getRelationships({
           module: args.module,
           id: args.id,
@@ -248,14 +261,9 @@ export function registerSinergiaTools(server: ToolServer): void {
       title: 'Crear registro',
       description:
         'Crea un registro nuevo en un módulo. Comprueba antes con get_module_fields qué campos existen y cuáles son obligatorios. Escribe en el CRM real: confirma con la persona usuaria antes de usarla.',
-      inputSchema: z.object({
-        module: moduleField,
-        attributes: z
-          .record(z.string(), z.unknown())
-          .describe('Pares campo→valor con los datos del nuevo registro.'),
-      }),
+      inputSchema: createInput,
     },
-    guarded(async ({ module, attributes }: { module: string; attributes: Record<string, unknown> }) =>
+    guarded(async ({ module, attributes }: z.infer<typeof createInput>) =>
       createEntry(module, attributes),
     ),
   )
@@ -266,24 +274,10 @@ export function registerSinergiaTools(server: ToolServer): void {
       title: 'Actualizar registro',
       description:
         'Actualiza los campos indicados de un registro existente. Solo se modifican los campos que envíes. Escribe en el CRM real: confirma con la persona usuaria antes de usarla.',
-      inputSchema: z.object({
-        module: moduleField,
-        id: idField,
-        attributes: z
-          .record(z.string(), z.unknown())
-          .describe('Pares campo→valor a modificar.'),
-      }),
+      inputSchema: updateInput,
     },
-    guarded(
-      async ({
-        module,
-        id,
-        attributes,
-      }: {
-        module: string
-        id: string
-        attributes: Record<string, unknown>
-      }) => updateEntry(module, id, attributes),
+    guarded(async ({ module, id, attributes }: z.infer<typeof updateInput>) =>
+      updateEntry(module, id, attributes),
     ),
   )
 
@@ -293,22 +287,10 @@ export function registerSinergiaTools(server: ToolServer): void {
       title: 'Crear relación',
       description:
         'Relaciona dos registros a través de un link field. Escribe en el CRM real: confirma con la persona usuaria antes de usarla.',
-      inputSchema: z.object({
-        module: moduleField,
-        id: idField,
-        relationship: z.string().describe('Link field del módulo origen.'),
-        related_module: z.string().describe('Módulo del registro relacionado.'),
-        related_id: z.string().describe('Id del registro relacionado.'),
-      }),
+      inputSchema: setRelationshipInput,
     },
     guarded(
-      async (args: {
-        module: string
-        id: string
-        relationship: string
-        related_module: string
-        related_id: string
-      }) =>
+      async (args: z.infer<typeof setRelationshipInput>) =>
         setRelationship({
           module: args.module,
           id: args.id,

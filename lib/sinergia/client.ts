@@ -84,9 +84,29 @@ async function send(
 }
 
 /**
+ * Igual que send(), pero convirtiendo el fallo de red en SinergiaApiError.
+ * Se mantiene aparte para no envolver por error los fallos de autenticación
+ * (que ocurren fuera de fetch) y reportarlos como si fueran de red.
+ */
+async function sendOrFail(
+  method: string,
+  url: string,
+  body: unknown,
+  token: string,
+  path: string,
+): Promise<Response> {
+  try {
+    return await send(method, url, body, token)
+  } catch (error) {
+    throw new SinergiaApiError(`Fallo de red llamando a ${method} ${path}`, {
+      details: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+/**
  * Lanza una petición contra la API V8. Si la respuesta es 401 se invalida el
- * token cacheado y se reintenta una única vez (el token pudo revocarse desde
- * el CRM mientras la instancia seguía viva).
+ * token cacheado y se reintenta una única vez.
  */
 export async function apiRequest<T = JsonApiDocument>(
   method: 'GET' | 'POST' | 'PATCH',
@@ -95,21 +115,14 @@ export async function apiRequest<T = JsonApiDocument>(
 ): Promise<T> {
   const url = buildUrl(path, options.query)
 
-  let token = await getAccessToken()
-  let response: Response
+  const token = await getAccessToken()
+  let response = await sendOrFail(method, url, options.body, token, path)
 
-  try {
-    response = await send(method, url, options.body, token)
-
-    if (response.status === 401) {
-      invalidateAccessToken()
-      token = await getAccessToken()
-      response = await send(method, url, options.body, token)
-    }
-  } catch (error) {
-    throw new SinergiaApiError(`Fallo de red llamando a ${method} ${path}`, {
-      details: error instanceof Error ? error.message : String(error),
-    })
+  if (response.status === 401) {
+    // El token pudo revocarse desde el CRM mientras la instancia seguía viva.
+    invalidateAccessToken()
+    const renewed = await getAccessToken()
+    response = await sendOrFail(method, url, options.body, renewed, path)
   }
 
   const raw = await response.text()

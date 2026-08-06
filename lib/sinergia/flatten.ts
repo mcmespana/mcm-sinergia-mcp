@@ -89,7 +89,7 @@ export function flattenCollection(
 ): FlatCollection {
   const records = asResourceArray(document.data).map((resource) => flattenResource(resource))
   const meta = document.meta ?? {}
-  const totalPages = meta['total-pages'] ?? meta.total_pages
+  const totalPages = Number(meta['total-pages'] ?? meta.total_pages)
 
   const collection: FlatCollection = {
     module: context.module,
@@ -99,7 +99,8 @@ export function flattenCollection(
     records,
   }
 
-  if (typeof totalPages === 'number') {
+  // SuiteCRM lo manda como entero, pero algunas versiones lo serializan como texto.
+  if (Number.isFinite(totalPages)) {
     collection.total_pages = totalPages
   }
 
@@ -163,7 +164,7 @@ function toBoolean(value: unknown): boolean {
 
 export function flattenFields(
   document: JsonApiDocument,
-  filters: { module: string; nameContains?: string } ,
+  filters: { module: string; nameContains?: string },
 ): { module: string; count: number; total_fields: number; fields: FlatField[]; nota?: string } {
   const attributes = (asResourceArray(document.data)[0]?.attributes ?? {}) as Record<
     string,

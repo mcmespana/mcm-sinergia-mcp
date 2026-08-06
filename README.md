@@ -159,8 +159,13 @@ cp .env.example .env.local
 | `SINERGIA_CLIENT_SECRET` | Sí | Client Secret |
 | `SINERGIA_USERNAME` | Con grant `password` | Usuario API dedicado |
 | `SINERGIA_PASSWORD` | Con grant `password` | Su contraseña |
-| `MCP_AUTH_SECRET` | Sí | Secreto que deben mandar los clientes MCP. `openssl rand -hex 32` |
+| `MCP_AUTH_SECRET` | Sí | Clave única del servidor MCP. `openssl rand -hex 32` |
 | `ALLOW_WRITES` | No | `false` por defecto. `true` registra las tools de escritura |
+| `PUBLIC_BASE_URL` | No | Solo con dominio propio, para forzar la URL que anuncia el descubrimiento OAuth |
+
+`MCP_AUTH_SECRET` hace tres papeles a la vez: es el bearer estático, es la
+clave que se teclea en la pantalla de consentimiento OAuth y es la semilla con
+la que se firman los tokens OAuth. Cambiarla invalida todo de golpe.
 
 Nunca se hardcodean credenciales en el código, y `.env*` está en `.gitignore`.
 
@@ -210,6 +215,8 @@ Notas:
 
 - Si la instancia de SinergiaCRM está detrás de VPN o con IPs filtradas, hay
   que permitir las IPs de salida de Vercel (o usar Vercel Secure Compute).
+- Si además filtras por IP quién puede llegar al despliegue, el tráfico de
+  Claude sale de `160.79.104.0/21`.
 - El token OAuth se cachea en memoria del proceso, así que se reaprovecha
   mientras Vercel reutilice la instancia (Fluid compute). No se persiste en
   disco ni en ningún almacén externo.
@@ -218,7 +225,45 @@ Notas:
 
 ## 6. Conectar un cliente MCP
 
-Clientes con soporte de Streamable HTTP y cabeceras:
+El servidor acepta **dos formas de autenticarse**, las dos contra la misma
+`MCP_AUTH_SECRET`:
+
+| Forma | Para quién |
+|-------|-----------|
+| Bearer estático en la cabecera `Authorization` | Claude Code, `mcp-remote`, MCP Inspector, curl |
+| OAuth 2.1 (el propio despliegue hace de servidor de autorización) | **Claude en la web**, Claude Desktop y móvil |
+
+### Claude en la web (claude.ai)
+
+Claude.ai **no deja poner cabeceras personalizadas** en los conectores: solo
+admite OAuth. Por eso este proyecto incluye un servidor OAuth mínimo. Pasos:
+
+1. Entra en [claude.ai → Ajustes → Conectores](https://claude.ai/customize/connectors)
+   (hace falta plan Pro, Max, Team o Enterprise).
+2. Pulsa **"+" → "Añadir conector personalizado"**.
+3. En la URL pega `https://<tu-deploy>.vercel.app/api/mcp` — con `/api/mcp` al
+   final. **No** toques "Ajustes avanzados": deja el Client ID y el Client
+   Secret vacíos, se registra solo.
+4. Pulsa **Añadir** y luego **Conectar**.
+5. Se abre una pantalla que pide la **clave de acceso**: pega ahí el valor de
+   `MCP_AUTH_SECRET` y dale a **Autorizar**.
+6. Vuelves a Claude con el conector conectado. En la caja de chat verás las
+   herramientas de SinergiaCRM disponibles.
+
+Si algún día cambias `MCP_AUTH_SECRET`, todas las sesiones OAuth dejan de valer
+y hay que volver a conectar el conector (que es justo lo que quieres).
+
+### Claude Code
+
+```bash
+claude mcp add --transport http sinergiacrm https://<tu-deploy>.vercel.app/api/mcp \
+  --header "Authorization: Bearer <MCP_AUTH_SECRET>"
+```
+
+También funciona sin `--header`: Claude Code detecta el OAuth y abre el
+navegador para pedirte la clave.
+
+### Otros clientes con Streamable HTTP
 
 ```json
 {
@@ -231,14 +276,9 @@ Clientes con soporte de Streamable HTTP y cabeceras:
 }
 ```
 
-Claude Code:
+### Clientes que solo hablan stdio
 
-```bash
-claude mcp add --transport http sinergiacrm https://<tu-deploy>.vercel.app/api/mcp \
-  --header "Authorization: Bearer <MCP_AUTH_SECRET>"
-```
-
-Clientes que solo hablan stdio, vía [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
+Vía [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
 
 ```json
 {
@@ -278,13 +318,19 @@ Para volver a solo lectura: `ALLOW_WRITES=false` y redeploy.
 
 ```
 app/
-  api/mcp/route.ts       Endpoint MCP + comprobación del bearer de entrada
+  api/mcp/route.ts       Endpoint MCP + verificación del token de entrada
+  oauth/register/        Dynamic Client Registration (RFC 7591)
+  oauth/authorize/       Pantalla de consentimiento + emisión del código (PKCE)
+  oauth/token/           Canje del código y refresco, con rotación
+  .well-known/…          Metadatos RFC 9728 (recurso) y RFC 8414 (servidor)
   page.tsx               Página informativa (sin datos del CRM)
 lib/
   config.ts              Lectura y validación de variables de entorno
   mcp/auth.ts            Comparación en tiempo constante contra MCP_AUTH_SECRET
   mcp/tools.ts           Definición y registro de las tools (flag de escritura)
-  sinergia/auth.ts       OAuth2: login, refresh y caché de token
+  oauth/tokens.ts        Firma y verificación HMAC de los artefactos OAuth
+  oauth/urls.ts          Resolución de la URL pública del despliegue
+  sinergia/auth.ts       OAuth2 contra el CRM: login, refresh y caché de token
   sinergia/client.ts     Cliente HTTP de la API V8, errores y reintento en 401
   sinergia/query.ts      Filtros estructurados, orden, paginación, validaciones
   sinergia/flatten.ts    Aplanado de JSON:API a respuestas compactas
@@ -292,11 +338,29 @@ lib/
 scripts/test-auth.ts     Smoke test de credenciales
 ```
 
-**Autenticación de entrada.** Antes de nada, el endpoint compara el header
-`Authorization: Bearer …` con `MCP_AUTH_SECRET` usando `timingSafeEqual` sobre
-los digests SHA-256 (tiempo constante y sin filtrar longitudes). Si no
-coincide, o si `MCP_AUTH_SECRET` no está configurado, responde `401` sin llegar
-a tocar el CRM.
+**Autenticación de entrada.** El endpoint acepta el bearer estático
+(`MCP_AUTH_SECRET`, comparado con `timingSafeEqual` sobre digests SHA-256, en
+tiempo constante y sin filtrar longitudes) o un access token OAuth emitido por
+este mismo despliegue. Si no hay ninguno de los dos válidos, responde `401` con
+`WWW-Authenticate: Bearer resource_metadata="…"` sin llegar a tocar el CRM. Si
+`MCP_AUTH_SECRET` no está configurado, se rechaza todo.
+
+**El servidor OAuth.** Es intencionadamente pequeño y **sin estado**: no hay
+base de datos. El `client_id`, el código de autorización, el access token y el
+refresh token son JSON firmados con HMAC-SHA256 usando una clave derivada de
+`MCP_AUTH_SECRET`. Se exige PKCE S256, los `redirect_uri` se validan contra los
+registrados por DCR (con la excepción de puerto para loopback que pide RFC
+8252), los códigos duran 2 minutos, los access tokens 1 hora y los refresh
+tokens 30 días con rotación en cada uso.
+
+Consecuencias de no tener estado, por si alguna importa:
+
+- No se pueden revocar tokens de uno en uno. Para invalidarlos todos, cambia
+  `MCP_AUTH_SECRET` y vuelve a desplegar.
+- Un código de autorización se podría reutilizar dentro de su ventana de 2
+  minutos. PKCE lo mitiga: haría falta interceptar también el `code_verifier`.
+- Quien conozca `MCP_AUTH_SECRET` puede autorizar un cliente. Es la misma
+  superficie que el bearer estático, no una nueva.
 
 **Autenticación de salida.** `POST /Api/access_token` con `grant_type=password`
 y `Content-Type: application/vnd.api+json`. El token se guarda en una variable
@@ -332,3 +396,6 @@ devuelve solo `module`, `page`, `page_size`, `count`, `total_pages` y
 | `Filter field X in Y module is not found` | El campo no existe en ese módulo: compruébalo con `get_module_fields` |
 | No aparecen las tools de escritura | `ALLOW_WRITES` no es `true`, o falta el redeploy |
 | Un módulo no aparece en `get_available_modules` | El rol del usuario API no le da acceso |
+| Claude web: "No se pudo conectar con el servidor MCP" | La URL no acaba en `/api/mcp`, o pusiste algo en Client ID/Secret |
+| Claude web: "Cliente no válido" al autorizar | Cambiaste `MCP_AUTH_SECRET`: borra el conector y vuelve a añadirlo |
+| Claude web pide la clave una y otra vez | La clave tecleada no coincide con `MCP_AUTH_SECRET` (ojo a espacios al copiar) |
