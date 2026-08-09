@@ -1,15 +1,14 @@
 # MCP SinergiaCRM
 
-Servidor **MCP remoto** (Streamable HTTP) en Next.js App Router, pensado para
-desplegar en Vercel, que expone la **API V8 de SinergiaCRM** como herramientas
-para modelos de lenguaje.
+Servidor **MCP remoto** (Streamable HTTP), en Next.js, que expone la **API V8
+de SinergiaCRM / SuiteCRM 7.x** como herramientas para agentes de IA (Claude,
+ChatGPT, o cualquier otro cliente compatible con el protocolo MCP).
 
-Las tools son genéricas: valen para cualquiera de los 50+ módulos de
-SinergiaCRM, incluidos los custom (Subvenciones, Proyectos, Atenciones,
-Valoraciones…).
+Las tools son genéricas: valen para cualquier módulo del CRM, incluidos los
+custom (Subvenciones, Proyectos, Atenciones, Valoraciones…), sin tocar código.
 
 > ⚠️ **SinergiaCRM va sobre SuiteCRM 7.x, no 8.x.** Los endpoints son
-> `{SINERGIA_URL}/Api/V8/...` y `{SINERGIA_URL}/Api/access_token`, **sin** el
+> `{SINERGIA_URL}/Api/V8/...` y `{SINERGIA_URL}/Api/access_token`, **sin**
 > prefijo `/legacy/`. Muchos ejemplos que circulan por internet usan
 > `/legacy/Api/V8/` porque asumen SuiteCRM 8.x: aquí eso da 404.
 
@@ -18,15 +17,14 @@ Valoraciones…).
 ## Índice
 
 1. [Qué expone](#qué-expone)
-2. [Crear el cliente OAuth2 en SinergiaCRM](#1-crear-el-cliente-oauth2-en-sinergiacrm)
-3. [Crear el usuario API y su rol restringido](#2-crear-el-usuario-api-y-su-rol-restringido)
-4. [Variables de entorno](#3-variables-de-entorno)
-5. [Probar en local](#4-probar-en-local)
-6. [Desplegar en Vercel](#5-desplegar-en-vercel)
-7. [Conectar un cliente MCP](#6-conectar-un-cliente-mcp)
-8. [Activar escritura](#7-activar-escritura)
-9. [Detalles de implementación](#detalles-de-implementación)
-10. [Resolución de problemas](#resolución-de-problemas)
+2. [Configurar SinergiaCRM](#1-configurar-sinergiacrm)
+3. [Variables de entorno](#2-variables-de-entorno)
+4. [Probar en local](#3-probar-en-local)
+5. [Desplegar en Vercel](#4-desplegar-en-vercel)
+6. [Conectar tu agente de IA](#5-conectar-tu-agente-de-ia)
+7. [Activar escritura](#6-activar-escritura)
+8. [Cómo está hecho por dentro](#cómo-está-hecho-por-dentro)
+9. [Problemas frecuentes](#problemas-frecuentes)
 
 ---
 
@@ -42,7 +40,7 @@ Valoraciones…).
 | `get_entry_list` | `GET /Api/V8/module/{module}` | Listado con filtros, orden y paginación |
 | `get_relationships` | `GET /Api/V8/module/{module}/{id}/relationships/{rel}` | Registros relacionados |
 
-### Escritura (solo con `ALLOW_WRITES=true`)
+### Escritura (solo con `ALLOW_WRITES=true`, ver [más abajo](#6-activar-escritura))
 
 | Tool | Endpoint V8 |
 |------|-------------|
@@ -52,12 +50,12 @@ Valoraciones…).
 
 ### Borrado
 
-**No existe.** No hay ninguna tool de borrado de registros ni de relaciones, y
-no se va a añadir. Si algún día hace falta borrar algo, se hace desde el CRM.
+No existe ninguna tool de borrado y no está previsto añadirla. Si hay que
+borrar algo, se hace desde el propio CRM.
 
 ### Filtros
 
-Los filtros son **estructurados**, nunca SQL. El modelo envía:
+Los filtros son **estructurados**, nunca SQL libre. El modelo envía algo así:
 
 ```json
 {
@@ -76,77 +74,69 @@ Los filtros son **estructurados**, nunca SQL. El modelo envía:
 }
 ```
 
-y el servidor lo traduce a la query de la API V8:
-
-```
-/Api/V8/module/Contacts?fields[Contacts]=name,email1&filter[operator]=and
-  &filter[last_name][like]=%García%&filter[date_entered][gte]=2024-01-01
-  &sort=-date_entered&page[number]=1&page[size]=20
-```
-
-- Operadores de comparación: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`.
-- Operador lógico: `and` (por defecto) u `or`.
-- Con `like` los comodines `%` los pone quien llama (`"%García%"`).
-- Los nombres de módulo y campo se validan contra `^[A-Za-z][A-Za-z0-9_]{0,63}$`
-  antes de salir a la red.
-- `page_size` está topado a **50**.
+y el servidor lo traduce a la query real de la API V8. Operadores admitidos:
+`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like` (comparación) y `and`/`or`
+(lógico). Nombres de módulo y campo se validan contra
+`^[A-Za-z][A-Za-z0-9_]{0,63}$` antes de salir a la red, y `page_size` está
+topado a **50** para no reventar el contexto del modelo.
 
 ---
 
-## 1. Crear el cliente OAuth2 en SinergiaCRM
+## 1. Configurar SinergiaCRM
 
-1. Entra en el CRM como administrador.
-2. **Administración → OAuth2 Clients → Nuevo**.
-3. Tipo de grant: **Password** (es el que usa este servidor por defecto).
-4. Rellena un nombre reconocible, p.ej. `MCP Sinergia (solo lectura)`.
-5. Guarda y copia el **Client ID** (un UUID) y el **Client Secret**.
-   El secret solo se muestra al crearlo: guárdalo ya en un gestor de
-   contraseñas.
+### 1.1 Cliente OAuth2
 
-Requisito del servidor (cosa de sistemas, se hace una vez): la API V8 necesita
-las claves RSA en `Api/V8/OAuth2/` (`private.key` con permisos 600,
-`public.key` con 644, propiedad del usuario del servidor web). Si no están, el
-`/Api/access_token` devuelve error 500. En instalaciones gestionadas por
-SinergiaTIC ya suelen venir configuradas.
+1. Entra al CRM como administrador.
+2. **Administración → Clientes y Tokens OAuth2 → Nuevo cliente de
+   contraseña**.
+3. En **"cambiar la clave"** pega un secreto largo e inventado (no una
+   contraseña que uses en otro sitio). Puedes generarlo con
+   `openssl rand -hex 32` o, si no tienes terminal a mano, con un generador
+   web como [este](https://numbergenerator.org/random-64-digit-hex-codes-generator).
+   Guárdalo: será tu `SINERGIA_CLIENT_SECRET`.
+4. Marca la casilla **"Es confidencial"**.
+5. Guarda. En el formulario (o en la URL del registro) aparece el campo
+   **"ID"**: ese valor es tu `SINERGIA_CLIENT_ID`.
+   El **nombre** del registro es solo para identificarlo a simple vista, no
+   se usa para nada más.
 
-> **Alternativa:** si prefieres `client_credentials`, crea el cliente con ese
-> grant y deja `SINERGIA_USERNAME` y `SINERGIA_PASSWORD` vacíos; el servidor lo
-> detecta solo. Es el grant que usan los
-> [ejemplos oficiales de SinergiaTIC](https://github.com/SinergiaTIC/SinergiaCRM-API-Examples/tree/main/v8).
-> Con `password` es más fácil auditar quién hizo qué, porque las acciones
-> quedan a nombre del usuario API.
+Requisito de sistemas (se hace una vez por instalación): la API V8 necesita
+las claves RSA en `Api/V8/OAuth2/` (`private.key` en 600, `public.key` en
+644). Si faltan, `/Api/access_token` responde `500`. En instalaciones
+gestionadas por SinergiaTIC suelen venir ya puestas.
 
-## 2. Crear el usuario API y su rol restringido
+### 1.2 Usuario API dedicado y rol restringido
 
-No uses tu usuario personal ni un administrador. Crea uno dedicado:
+No uses tu usuario personal ni un administrador.
 
-1. **Administración → Gestión de usuarios → Crear usuario nuevo**.
-   - Nombre de usuario: `api.mcp` (o similar).
-   - Tipo de usuario: **Usuario normal** (nunca administrador).
-   - Marca el usuario como *no receptor de notificaciones* para no llenarle el
-     correo.
-   - Ponle una contraseña larga y aleatoria y guárdala en el gestor de
-     contraseñas.
-2. **Administración → Gestión de roles → Crear rol**, p.ej.
-   `MCP - solo lectura`:
-   - Para cada módulo al que quieras dar acceso: `Ver` = **Sí** (o *Todos*),
-     `Listar` = **Sí**.
-   - `Editar`, `Eliminar`, `Importar`, `Exportar`, `Acceso masivo a la
-     actualización` = **No**.
-   - Los módulos que no quieras exponer: `Acceso` = **Deshabilitado**.
-3. Asigna el rol al usuario `api.mcp`.
+1. **Administración → Gestión de usuarios → Crear usuario nuevo**: tipo
+   *Usuario normal* (nunca administrador), con una contraseña larga y
+   aleatoria guardada en un gestor de contraseñas.
+2. **Administración → Gestión de roles → Crear rol** (p.ej.
+   `MCP - solo lectura`): para cada módulo que quieras exponer, `Ver` y
+   `Listar` = Sí; `Editar`, `Eliminar`, `Importar`, `Exportar` = No. Los
+   módulos que no quieras exponer, `Acceso` = Deshabilitado.
+3. Asigna el rol al usuario.
 
-El rol es la barrera de seguridad de verdad: aunque alguien active
-`ALLOW_WRITES`, el CRM seguirá rechazando lo que el rol no permita. Cuando más
-adelante quieras escritura, crea un segundo rol con `Editar = Sí` solo en los
-módulos concretos que necesites.
+Este rol es la barrera de seguridad real: aunque alguien active
+`ALLOW_WRITES` en el servidor, el CRM seguirá rechazando lo que el rol no
+permita. `get_available_modules` devuelve los ACLs efectivos del usuario, así
+que sirve para comprobar que el rol quedó bien.
 
-> `get_available_modules` devuelve los ACLs efectivos del usuario API, así que
-> es la forma rápida de comprobar que el rol quedó como querías.
+> **¿Por qué 4 variables (client id/secret **y** usuario/contraseña) y no
+> solo el cliente OAuth2?** Porque el grant `password` de OAuth2 identifica
+> **dos cosas a la vez**: la aplicación que llama (el cliente) y la persona
+> en cuyo nombre actúa (el usuario del CRM). Sin usuario, el CRM no sabe qué
+> rol y qué permisos aplicar a cada llamada, y las acciones no quedarían
+> a nombre de nadie auditable. Si prefieres no crear un usuario dedicado,
+> puedes usar `client_credentials` en su lugar (deja `SINERGIA_USERNAME` y
+> `SINERGIA_PASSWORD` vacíos: el servidor lo detecta solo), que es el grant
+> de los [ejemplos oficiales de SinergiaTIC](https://github.com/SinergiaTIC/SinergiaCRM-API-Examples/tree/main/v8).
+> Con `password` es más fácil auditar quién hizo qué en el CRM.
 
-## 3. Variables de entorno
+---
 
-Copia `.env.example` a `.env.local` y rellénalo:
+## 2. Variables de entorno
 
 ```bash
 cp .env.example .env.local
@@ -155,21 +145,25 @@ cp .env.example .env.local
 | Variable | Obligatoria | Descripción |
 |----------|-------------|-------------|
 | `SINERGIA_URL` | Sí | URL base de la instancia, **sin** `/Api` y **sin** `/legacy` |
-| `SINERGIA_CLIENT_ID` | Sí | Client ID del cliente OAuth2 |
-| `SINERGIA_CLIENT_SECRET` | Sí | Client Secret |
-| `SINERGIA_USERNAME` | Con grant `password` | Usuario API dedicado |
+| `SINERGIA_CLIENT_ID` | Sí | Campo "ID" del cliente OAuth2 (paso 1.1) |
+| `SINERGIA_CLIENT_SECRET` | Sí | El secreto que pegaste en "cambiar la clave" (paso 1.1) |
+| `SINERGIA_USERNAME` | Con grant `password` | Usuario API dedicado (paso 1.2) |
 | `SINERGIA_PASSWORD` | Con grant `password` | Su contraseña |
-| `MCP_AUTH_SECRET` | Sí | Clave única del servidor MCP. `openssl rand -hex 32` |
-| `ALLOW_WRITES` | No | `false` por defecto. `true` registra las tools de escritura |
-| `PUBLIC_BASE_URL` | No | Solo con dominio propio, para forzar la URL que anuncia el descubrimiento OAuth |
+| `MCP_AUTH_SECRET` | Sí | Secreto propio de este servidor. Genéralo igual que el anterior, con `openssl rand -hex 32` o el generador web |
+| `ALLOW_WRITES` | No | `false` por defecto; `true` registra las tools de escritura |
+| `PUBLIC_BASE_URL` | No | Solo con dominio propio, para fijar la URL que anuncia el descubrimiento OAuth |
 
-`MCP_AUTH_SECRET` hace tres papeles a la vez: es el bearer estático, es la
-clave que se teclea en la pantalla de consentimiento OAuth y es la semilla con
-la que se firman los tokens OAuth. Cambiarla invalida todo de golpe.
+`MCP_AUTH_SECRET` es distinto del cliente OAuth2 del CRM: es la clave de
+entrada a *este* servidor MCP, y hace tres papeles — bearer estático, clave
+de la pantalla de consentimiento OAuth, y semilla para firmar los tokens que
+emite este mismo servidor. Cambiarla invalida todas las sesiones de golpe (a
+propósito, es la forma de revocar acceso).
 
-Nunca se hardcodean credenciales en el código, y `.env*` está en `.gitignore`.
+Nunca se hardcodean credenciales en el código; `.env*` está en `.gitignore`.
 
-## 4. Probar en local
+---
+
+## 3. Probar en local
 
 ```bash
 npm install
@@ -177,22 +171,18 @@ npm run test:auth   # login OAuth2 + listado de módulos, no escribe nada
 npm run dev         # http://localhost:3000/api/mcp
 ```
 
-`npm run test:auth` es el paso previo a cualquier despliegue: valida URL,
-cliente OAuth2, usuario y permisos del rol, e imprime los primeros módulos
-accesibles. Lee `.env.local` y `.env` automáticamente.
-
-Comprobación rápida del endpoint MCP (debe dar `401` sin credenciales):
+`npm run test:auth` valida URL, cliente OAuth2, usuario y permisos del rol, e
+imprime los primeros módulos accesibles. Es el paso previo a cualquier
+despliegue.
 
 ```bash
+# Sin credenciales debe dar 401:
 curl -i -X POST http://localhost:3000/api/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
-```
 
-Y con el secreto, para ver las tools registradas:
-
-```bash
+# Con el secreto, para ver las tools registradas:
 curl -s -X POST http://localhost:3000/api/mcp \
   -H "Authorization: Bearer $MCP_AUTH_SECRET" \
   -H 'Content-Type: application/json' \
@@ -202,68 +192,31 @@ curl -s -X POST http://localhost:3000/api/mcp \
 
 Otros comandos: `npm run typecheck`, `npm run build`.
 
-## 5. Desplegar en Vercel
+---
 
-1. Importa el repositorio en Vercel. Next.js se detecta solo; no hace falta
-   tocar el build.
-2. **Settings → Environment Variables**: añade las siete variables de la tabla
-   anterior (Production y, si la usas, Preview). Márcalas como *Sensitive*.
-3. Despliega.
-4. Tu endpoint MCP queda en `https://<tu-deploy>.vercel.app/api/mcp`.
+## 4. Desplegar en Vercel
 
-Notas:
+1. Importa el repositorio en Vercel (Next.js se detecta solo).
+2. **Settings → Environment Variables**: añade las variables de la tabla
+   anterior y márcalas como *Sensitive*.
+3. Despliega. El endpoint queda en `https://<tu-deploy>.vercel.app/api/mcp`.
 
-- Si la instancia de SinergiaCRM está detrás de VPN o con IPs filtradas, hay
-  que permitir las IPs de salida de Vercel (o usar Vercel Secure Compute).
-- Si además filtras por IP quién puede llegar al despliegue, el tráfico de
-  Claude sale de `160.79.104.0/21`.
-- El token OAuth se cachea en memoria del proceso, así que se reaprovecha
-  mientras Vercel reutilice la instancia (Fluid compute). No se persiste en
-  disco ni en ningún almacén externo.
-- `maxDuration` del endpoint está en 60 s.
+Notas sueltas:
+
+- Si SinergiaCRM está detrás de VPN o filtra IPs, hay que permitir las IPs de
+  salida de Vercel (o usar Vercel Secure Compute).
+- El token OAuth se cachea en memoria del proceso y se reaprovecha mientras
+  Vercel reutilice la instancia; no se persiste en disco ni en ningún
+  almacén externo.
 - Cada cambio de variable de entorno necesita un redeploy para aplicarse.
 
-## 6. Conectar un cliente MCP
+---
 
-El servidor acepta **dos formas de autenticarse**, las dos contra la misma
-`MCP_AUTH_SECRET`:
+## 5. Conectar tu agente de IA
 
-| Forma | Para quién |
-|-------|-----------|
-| Bearer estático en la cabecera `Authorization` | Claude Code, `mcp-remote`, MCP Inspector, curl |
-| OAuth 2.1 (el propio despliegue hace de servidor de autorización) | **Claude en la web**, Claude Desktop y móvil |
-
-### Claude en la web (claude.ai)
-
-Claude.ai **no deja poner cabeceras personalizadas** en los conectores: solo
-admite OAuth. Por eso este proyecto incluye un servidor OAuth mínimo. Pasos:
-
-1. Entra en [claude.ai → Ajustes → Conectores](https://claude.ai/customize/connectors)
-   (hace falta plan Pro, Max, Team o Enterprise).
-2. Pulsa **"+" → "Añadir conector personalizado"**.
-3. En la URL pega `https://<tu-deploy>.vercel.app/api/mcp` — con `/api/mcp` al
-   final. **No** toques "Ajustes avanzados": deja el Client ID y el Client
-   Secret vacíos, se registra solo.
-4. Pulsa **Añadir** y luego **Conectar**.
-5. Se abre una pantalla que pide la **clave de acceso**: pega ahí el valor de
-   `MCP_AUTH_SECRET` y dale a **Autorizar**.
-6. Vuelves a Claude con el conector conectado. En la caja de chat verás las
-   herramientas de SinergiaCRM disponibles.
-
-Si algún día cambias `MCP_AUTH_SECRET`, todas las sesiones OAuth dejan de valer
-y hay que volver a conectar el conector (que es justo lo que quieres).
-
-### Claude Code
-
-```bash
-claude mcp add --transport http sinergiacrm https://<tu-deploy>.vercel.app/api/mcp \
-  --header "Authorization: Bearer <MCP_AUTH_SECRET>"
-```
-
-También funciona sin `--header`: Claude Code detecta el OAuth y abre el
-navegador para pedirte la clave.
-
-### Otros clientes con Streamable HTTP
+El servidor acepta dos formas de autenticarse, ambas contra la misma
+`MCP_AUTH_SECRET`. Cualquier cliente MCP genérico (Streamable HTTP) puede
+usar la primera:
 
 ```json
 {
@@ -276,9 +229,17 @@ navegador para pedirte la clave.
 }
 ```
 
-### Clientes que solo hablan stdio
+Esto vale para Claude Code, MCP Inspector, y cualquier agente que permita
+configurar cabeceras personalizadas en sus conectores MCP.
 
-Vía [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
+**Claude Code:**
+
+```bash
+claude mcp add --transport http sinergiacrm https://<tu-deploy>.vercel.app/api/mcp \
+  --header "Authorization: Bearer <MCP_AUTH_SECRET>"
+```
+
+**Clientes que solo hablan stdio** (vía [`mcp-remote`](https://www.npmjs.com/package/mcp-remote)):
 
 ```json
 {
@@ -295,26 +256,38 @@ Vía [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
 }
 ```
 
-## 7. Activar escritura
+**Claude en la web (claude.ai):** no permite cabeceras personalizadas en
+conectores, solo OAuth — por eso el servidor incluye uno mínimo.
 
-Arrancamos en solo lectura a propósito. Para habilitar escritura:
+1. [claude.ai → Ajustes → Conectores](https://claude.ai/customize/connectors)
+   (plan Pro/Max/Team/Enterprise).
+2. **"+" → "Añadir conector personalizado"**, y pega la URL con `/api/mcp` al
+   final. Deja Client ID y Client Secret vacíos: se registra solo.
+3. **Añadir → Conectar**. Se abrirá una pantalla pidiendo una clave de
+   acceso: pega ahí `MCP_AUTH_SECRET`.
 
-1. Revisa que el rol del usuario API tenga `Editar` **solo** en los módulos que
-   toque. Si el rol es de solo lectura, activar el flag no sirve de nada (y es
-   lo correcto: el CRM manda).
-2. En Vercel, pon `ALLOW_WRITES=true`.
-3. Redeploy.
-4. Comprueba que `tools/list` ahora incluye `create_entry`, `update_entry` y
-   `set_relationship`.
-
-Con `ALLOW_WRITES=false` esas tools **ni siquiera se registran**: el modelo no
-las ve, así que no puede ni intentar llamarlas.
-
-Para volver a solo lectura: `ALLOW_WRITES=false` y redeploy.
+Si cambias `MCP_AUTH_SECRET`, todas las sesiones OAuth dejan de valer y hay
+que reconectar (es la forma de revocar acceso de golpe).
 
 ---
 
-## Detalles de implementación
+## 6. Activar escritura
+
+Por defecto solo lectura, a propósito:
+
+1. Revisa que el rol del usuario API tenga `Editar` **solo** en los módulos
+   que toque (el CRM manda, aunque el flag esté activo).
+2. `ALLOW_WRITES=true` en Vercel y redeploy.
+3. Comprueba que `tools/list` ahora incluye `create_entry`, `update_entry` y
+   `set_relationship`.
+
+Con `ALLOW_WRITES=false` esas tools **ni se registran**: el modelo no las ve,
+no puede intentar llamarlas. Para volver atrás, `ALLOW_WRITES=false` y
+redeploy.
+
+---
+
+## Cómo está hecho por dentro
 
 ```
 app/
@@ -322,80 +295,70 @@ app/
   oauth/register/        Dynamic Client Registration (RFC 7591)
   oauth/authorize/       Pantalla de consentimiento + emisión del código (PKCE)
   oauth/token/           Canje del código y refresco, con rotación
-  .well-known/…          Metadatos RFC 9728 (recurso) y RFC 8414 (servidor)
-  page.tsx               Página informativa (sin datos del CRM)
+  .well-known/…          Metadatos RFC 9728 y RFC 8414
 lib/
   config.ts              Lectura y validación de variables de entorno
   mcp/auth.ts            Comparación en tiempo constante contra MCP_AUTH_SECRET
   mcp/tools.ts           Definición y registro de las tools (flag de escritura)
   oauth/tokens.ts        Firma y verificación HMAC de los artefactos OAuth
-  oauth/urls.ts          Resolución de la URL pública del despliegue
   sinergia/auth.ts       OAuth2 contra el CRM: login, refresh y caché de token
   sinergia/client.ts     Cliente HTTP de la API V8, errores y reintento en 401
   sinergia/query.ts      Filtros estructurados, orden, paginación, validaciones
   sinergia/flatten.ts    Aplanado de JSON:API a respuestas compactas
-  sinergia/operations.ts Operaciones de alto nivel usadas por las tools
 scripts/test-auth.ts     Smoke test de credenciales
 ```
 
-**Autenticación de entrada.** El endpoint acepta el bearer estático
-(`MCP_AUTH_SECRET`, comparado con `timingSafeEqual` sobre digests SHA-256, en
-tiempo constante y sin filtrar longitudes) o un access token OAuth emitido por
-este mismo despliegue. Si no hay ninguno de los dos válidos, responde `401` con
-`WWW-Authenticate: Bearer resource_metadata="…"` sin llegar a tocar el CRM. Si
-`MCP_AUTH_SECRET` no está configurado, se rechaza todo.
+Puntos que suelen preguntarse:
 
-**El servidor OAuth.** Es intencionadamente pequeño y **sin estado**: no hay
-base de datos. El `client_id`, el código de autorización, el access token y el
-refresh token son JSON firmados con HMAC-SHA256 usando una clave derivada de
-`MCP_AUTH_SECRET`. Se exige PKCE S256, los `redirect_uri` se validan contra los
-registrados por DCR (con la excepción de puerto para loopback que pide RFC
-8252), los códigos duran 2 minutos, los access tokens 1 hora y los refresh
-tokens 30 días con rotación en cada uso.
+- **Autenticación de entrada.** Bearer estático comparado con
+  `timingSafeEqual` sobre digests SHA-256 (tiempo constante, sin filtrar
+  longitud), o un access token OAuth emitido por este mismo despliegue. Sin
+  ninguno de los dos válidos: `401`, sin llegar a tocar el CRM. Si
+  `MCP_AUTH_SECRET` no está configurado, se rechaza todo.
+- **El servidor OAuth es intencionadamente pequeño y sin estado**: no hay
+  base de datos. `client_id`, código de autorización, access token y refresh
+  token son JSON firmados con HMAC-SHA256 derivado de `MCP_AUTH_SECRET`. Se
+  exige PKCE S256, los `redirect_uri` se validan contra los registrados por
+  DCR, los códigos duran 2 minutos, los access tokens 1 hora, los refresh
+  30 días con rotación en cada uso. Consecuencia directa de no tener estado:
+  no se pueden revocar tokens uno a uno, solo todos a la vez (cambiando
+  `MCP_AUTH_SECRET`).
+- **Autenticación de salida.** El token de SinergiaCRM se cachea en memoria
+  del proceso y se renueva 60s antes de caducar; las llamadas concurrentes
+  comparten una sola petición de token; si la API responde `401`, se
+  invalida y se reintenta una vez.
+- **Respuestas compactas.** Se aplanan de JSON:API a `{id, module,
+  ...atributos}`, se descartan campos vacíos, se truncan textos de más de
+  800 caracteres. Aun así, usa `fields` en tus peticiones cuando sepas qué
+  necesitas.
 
-Consecuencias de no tener estado, por si alguna importa:
+Referencias usadas: [SuiteCRM V8 JSON:API](https://docs.suitecrm.com/developer/api/developer-setup-guide/json-api/)
+y [SinergiaTIC/SinergiaCRM-API-Examples](https://github.com/SinergiaTIC/SinergiaCRM-API-Examples).
 
-- No se pueden revocar tokens de uno en uno. Para invalidarlos todos, cambia
-  `MCP_AUTH_SECRET` y vuelve a desplegar.
-- Un código de autorización se podría reutilizar dentro de su ventana de 2
-  minutos. PKCE lo mitiga: haría falta interceptar también el `code_verifier`.
-- Quien conozca `MCP_AUTH_SECRET` puede autorizar un cliente. Es la misma
-  superficie que el bearer estático, no una nueva.
+---
 
-**Autenticación de salida.** `POST /Api/access_token` con `grant_type=password`
-y `Content-Type: application/vnd.api+json`. El token se guarda en una variable
-a nivel de módulo con su fecha de expiración; se renueva 60 s antes de caducar
-usando `grant_type=refresh_token` y, si el refresh falla, se hace login
-completo. Las llamadas concurrentes comparten una sola petición de token. Si la
-API responde `401`, se invalida el token y se reintenta la llamada una vez.
-
-**Respuestas compactas.** Las respuestas JSON:API se aplanan antes de
-devolverlas: `{id, module, ...atributos}`, se descartan los campos vacíos y el
-`deleted=0`, se truncan los textos de más de 800 caracteres y el listado
-devuelve solo `module`, `page`, `page_size`, `count`, `total_pages` y
-`records`. Aun así, usa siempre `fields` cuando sepas qué campos necesitas.
-
-**Referencias usadas.**
-
-- [SuiteCRM V8 JSON:API](https://docs.suitecrm.com/developer/api/developer-setup-guide/json-api/)
-- [SinergiaTIC/SinergiaCRM-API-Examples](https://github.com/SinergiaTIC/SinergiaCRM-API-Examples)
-  (carpetas `v8` y `PortalOauth`) — referencia autorizada para esta instalación
-- Código de `Api/V8` de SuiteCRM 7.x, para confirmar los operadores de filtro
-  soportados (`Api\V8\JsonApi\Repository\Filter`)
-
-## Resolución de problemas
+## Problemas frecuentes
 
 | Síntoma | Causa probable |
 |---------|----------------|
-| `404` al pedir el token | `SINERGIA_URL` mal puesta, o has incluido `/legacy` o `/Api` en ella |
+| `404` al pedir el token | `SINERGIA_URL` mal puesta, o incluye `/legacy` o `/Api` |
 | `Respuesta no-JSON de …/Api/access_token` | La URL apunta a la interfaz web, no a la API; o la API V8 no está habilitada |
 | `500` al pedir el token | Faltan o tienen mal los permisos las claves RSA de `Api/V8/OAuth2/` |
 | `invalid_client` | Client ID/Secret mal, o el cliente OAuth2 tiene otro grant configurado |
-| `invalid_credentials` | Usuario o contraseña del usuario API incorrectos, o usuario desactivado |
-| Todas las peticiones MCP dan `401` | Falta `MCP_AUTH_SECRET` en el entorno, o el cliente manda otro valor |
+| `invalid_credentials` | Usuario o contraseña incorrectos, o usuario desactivado |
+| Todas las peticiones MCP dan `401` | Falta `MCP_AUTH_SECRET`, o el cliente manda otro valor |
 | `Filter field X in Y module is not found` | El campo no existe en ese módulo: compruébalo con `get_module_fields` |
 | No aparecen las tools de escritura | `ALLOW_WRITES` no es `true`, o falta el redeploy |
 | Un módulo no aparece en `get_available_modules` | El rol del usuario API no le da acceso |
-| Claude web: "No se pudo conectar con el servidor MCP" | La URL no acaba en `/api/mcp`, o pusiste algo en Client ID/Secret |
+| Claude web: "No se pudo conectar" | La URL no acaba en `/api/mcp`, o pusiste algo en Client ID/Secret |
 | Claude web: "Cliente no válido" al autorizar | Cambiaste `MCP_AUTH_SECRET`: borra el conector y vuelve a añadirlo |
 | Claude web pide la clave una y otra vez | La clave tecleada no coincide con `MCP_AUTH_SECRET` (ojo a espacios al copiar) |
+
+---
+
+## Créditos
+
+Primera versión / prototipo, hecho para explorar cómo montar un servidor MCP
+sobre la API de SuiteCRM/SinergiaCRM sin depender de nada más que Next.js y
+un despliegue en Vercel. No es un producto cerrado ni la única forma de
+hacerlo — revísalo, adáptalo y rómpelo si hace falta.
