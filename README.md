@@ -4,12 +4,10 @@ Servidor **MCP remoto** (Streamable HTTP), en Next.js, que expone la **API V8
 de SinergiaCRM (SuiteCRM 7.x)** como herramientas para agentes de IA (Claude,
 ChatGPT, o cualquier otro cliente compatible con el protocolo MCP).
 
-Las tools son genéricas: valen para cualquier módulo del CRM, incluidos los
+Las herramientas son genéricas: valen para cualquier módulo del CRM, incluidos los
 custom (Contactos, Proyectos, Atenciones, Valoraciones…), sin tocar código.
 
-> ⚠️ **SinergiaCRM va sobre SuiteCRM 7.x, no 8.x.** Los endpoints son
-> `{SINERGIA_URL}/Api/V8/...` y `{SINERGIA_URL}/Api/access_token`
-
+> ⚠️ **SinergiaCRM va sobre SuiteCRM 7.x, no 8.x.** 
 ---
 
 ## Índice
