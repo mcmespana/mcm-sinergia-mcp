@@ -24,6 +24,12 @@ export default function HomePage() {
           <code>ALLOW_WRITES</code>)
         </li>
         <li>Borrado: no implementado.</li>
+        <li>
+          Documentación (manual de SinergiaCRM y SinergiaDA): tools <code>docs_*</code>, estado en{' '}
+          <a href="/api/docs-health">
+            <code>/api/docs-health</code>
+          </a>
+        </li>
       </ul>
 
       <p style={{ color: '#666', fontSize: '0.9rem' }}>
