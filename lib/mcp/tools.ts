@@ -31,7 +31,7 @@ export interface ToolServer {
   ): unknown
 }
 
-interface ToolResult {
+export interface ToolResult {
   content: Array<{ type: 'text'; text: string }>
   isError?: boolean
 }
@@ -45,7 +45,7 @@ function fail(error: unknown): ToolResult {
 }
 
 /** Envuelve el handler para que ningún fallo tumbe la petición MCP. */
-function guarded<A>(handler: (args: A) => Promise<unknown>) {
+export function guarded<A>(handler: (args: A) => Promise<unknown>) {
   return async (args: A): Promise<ToolResult> => {
     try {
       return ok(await handler(args))

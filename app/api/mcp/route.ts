@@ -15,6 +15,7 @@
 import type { AuthInfo } from '@modelcontextprotocol/server'
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { isAuthorizedBearer } from '@/lib/mcp/auth'
+import { registerDocsTools } from '@/lib/mcp/docs-tools'
 import { registerSinergiaTools, type ToolServer } from '@/lib/mcp/tools'
 import { MCP_SCOPE, readAccessToken } from '@/lib/oauth/tokens'
 import { PROTECTED_RESOURCE_METADATA_PATH } from '@/lib/oauth/urls'
@@ -26,6 +27,7 @@ export const maxDuration = 60
 const handler = createMcpHandler(
   (server) => {
     registerSinergiaTools(server as unknown as ToolServer)
+    registerDocsTools(server as unknown as ToolServer)
   },
   {
     serverInfo: {

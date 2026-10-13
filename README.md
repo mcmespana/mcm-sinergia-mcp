@@ -7,6 +7,10 @@ ChatGPT, o cualquier otro cliente compatible con el protocolo MCP).
 Las herramientas son genéricas: valen para cualquier módulo del CRM, incluidos los
 custom (Contactos, Proyectos, Atenciones, Valoraciones…), sin tocar código.
 
+Además incluye el **manual oficial de SinergiaCRM y de SinergiaDA** (la
+[wiki de SinergiaTIC](https://wiki.sinergiatic.org/index.php/Especial:MiIdioma/Manual_de_SinergiaCRM)),
+para que el agente pueda consultar cómo funciona algo antes de explicarlo.
+
 > ⚠️ **SinergiaCRM va sobre SuiteCRM 7.x, no 8.x.** 
 ---
 
@@ -43,6 +47,36 @@ custom (Contactos, Proyectos, Atenciones, Valoraciones…), sin tocar código.
 | `create_entry` | `POST /Api/V8/module` |
 | `update_entry` | `PATCH /Api/V8/module` |
 | `set_relationship` | `POST /Api/V8/module/{module}/{id}/relationships/{rel}` |
+
+### Documentación (siempre disponible, no necesita credenciales del CRM)
+
+| Tool | Para qué |
+|------|----------|
+| `docs_index` | Índice del [Manual de SinergiaCRM](https://wiki.sinergiatic.org/index.php/Especial:MiIdioma/Manual_de_SinergiaCRM) y del [Manual de SinergiaDA](https://wiki.sinergiatic.org/index.php/Manual_de_SinergiaDA), por bloques |
+| `docs_search` | Búsqueda de texto completo en los dos manuales; devuelve secciones con fragmento y URL |
+| `docs_read` | Lee una página (o solo una sección) en castellano, convertida a markdown |
+
+Cómo funciona:
+
+- El índice sale **en vivo** de las páginas *Manual de SinergiaCRM* y *Manual de
+  SinergiaDA* de la wiki (API MediaWiki pública, sin login). Si SinergiaTIC añade
+  una página al manual, aparece sola.
+- De cada página se lee la traducción `/es`; si no existe, la original.
+- La búsqueda de la propia wiki no devuelve resultados, así que el servidor
+  descarga las ~100 páginas de los manuales (unas pocas peticiones por lotes,
+  ~5 s) la primera vez que se busca, y las guarda en memoria **6 horas**.
+  `docs_read` siempre lee la página en vivo.
+- Si la wiki no responde, las tools devuelven un error que lo explica (en vez de
+  que el modelo se invente la respuesta); si había una copia en memoria se usa
+  esa, avisando de que puede estar desactualizada.
+
+**Vigilancia:** `GET /api/docs-health` (público, no expone nada del CRM) dice si
+el despliegue llega a la wiki: `200` si va bien, `503` si no. El workflow
+[`docs-health.yml`](.github/workflows/docs-health.yml) lo comprueba cada día a
+las 06:17 UTC; si falla, GitHub manda un correo (a quien tenga activadas las
+notificaciones de Actions del repo). Se puede lanzar a mano desde *Actions →
+Documentación (wiki SinergiaTIC) → Run workflow*. Para probarlo desde tu
+máquina: `npm run test:docs -- "texto a buscar"`.
 
 ### Borrado
 
@@ -144,6 +178,7 @@ cp .env.example .env.local
 | `MCP_AUTH_SECRET` | Sí | Secreto propio de este servidor. Genéralo igual que el anterior, con `openssl rand -hex 32` o el generador web |
 | `ALLOW_WRITES` | No | `false` por defecto; `true` registra las tools de escritura |
 | `PUBLIC_BASE_URL` | No | Solo con dominio propio, para fijar la URL que anuncia el descubrimiento OAuth |
+| `WIKI_URL` | No | URL de la wiki de documentación. Por defecto `https://wiki.sinergiatic.org` |
 
 `MCP_AUTH_SECRET` es distinto del cliente OAuth2 del CRM: es la clave de
 entrada a *este* servidor MCP, y hace tres papeles — bearer estático, clave
@@ -290,12 +325,18 @@ lib/
   config.ts              Lectura y validación de variables de entorno
   mcp/auth.ts            Comparación en tiempo constante contra MCP_AUTH_SECRET
   mcp/tools.ts           Definición y registro de las tools (flag de escritura)
+  mcp/docs-tools.ts      Tools de documentación (docs_index, docs_search, docs_read)
   oauth/tokens.ts        Firma y verificación HMAC de los artefactos OAuth
   sinergia/auth.ts       OAuth2 contra el CRM: login, refresh y caché de token
   sinergia/client.ts     Cliente HTTP de la API V8, errores y reintento en 401
   sinergia/query.ts      Filtros estructurados, orden, paginación, validaciones
   sinergia/flatten.ts    Aplanado de JSON:API a respuestas compactas
+  wiki/client.ts         Cliente de la API MediaWiki y errores de "wiki no accesible"
+  wiki/wikitext.ts       Índice del manual, wikitexto → markdown, secciones
+  wiki/manual.ts         Descarga por lotes, caché, búsqueda y lectura de páginas
+app/api/docs-health/     Estado de la conexión con la wiki
 scripts/test-auth.ts     Smoke test de credenciales
+scripts/test-docs.ts     Smoke test de la documentación
 ```
 
 
@@ -320,6 +361,8 @@ y [SinergiaTIC/SinergiaCRM-API-Examples](https://github.com/SinergiaTIC/Sinergia
 | Un módulo no aparece en `get_available_modules` | El rol del usuario API no le da acceso |
 | Claude web: "No se pudo conectar" | La URL no acaba en `/api/mcp`, o pusiste algo en Client ID/Secret |
 | Claude web: "Cliente no válido" al autorizar | Cambiaste `MCP_AUTH_SECRET`: borra el conector y vuelve a añadirlo |
+| `docs_*`: "No se puede acceder a la wiki de SinergiaTIC" | La wiki está caída o bloquea las IPs de Vercel. Mira `/api/docs-health` y el workflow *Documentación* en Actions |
+| `docs_search` no encuentra algo que está en la wiki | Solo busca en las páginas enlazadas desde los dos índices del manual; prueba `docs_read` con el título |
 | Claude web pide la clave una y otra vez | La clave tecleada no coincide con `MCP_AUTH_SECRET` (ojo a espacios al copiar) |
 
 ---

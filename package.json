@@ -2,7 +2,7 @@
   "name": "mcp-sinergia",
   "version": "0.1.0",
   "private": true,
-  "description": "Servidor MCP remoto (Next.js App Router) sobre la API V8 de SinergiaCRM",
+  "description": "Servidor MCP remoto (Next.js App Router) sobre la API V8 de SinergiaCRM y su manual en la wiki de SinergiaTIC",
   "engines": {
     "node": ">=20.12"
   },
@@ -11,7 +11,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test:auth": "tsx scripts/test-auth.ts"
+    "test:auth": "tsx scripts/test-auth.ts",
+    "test:docs": "tsx scripts/test-docs.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
