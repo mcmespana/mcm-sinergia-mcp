@@ -70,13 +70,9 @@ Cómo funciona:
   que el modelo se invente la respuesta); si había una copia en memoria se usa
   esa, avisando de que puede estar desactualizada.
 
-**Vigilancia:** `GET /api/docs-health` (público, no expone nada del CRM) dice si
-el despliegue llega a la wiki: `200` si va bien, `503` si no. El workflow
-[`docs-health.yml`](.github/workflows/docs-health.yml) lo comprueba cada día a
-las 06:17 UTC; si falla, GitHub manda un correo (a quien tenga activadas las
-notificaciones de Actions del repo). Se puede lanzar a mano desde *Actions →
-Documentación (wiki SinergiaTIC) → Run workflow*. Para probarlo desde tu
-máquina: `npm run test:docs -- "texto a buscar"`.
+**Estado:** `GET /api/docs-health` (público, no expone nada del CRM) dice si
+el despliegue llega a la wiki: `200` si va bien, `503` si no. Para probarlo
+desde tu máquina: `npm run test:docs -- "texto a buscar"`.
 
 ### Borrado
 
@@ -361,7 +357,7 @@ y [SinergiaTIC/SinergiaCRM-API-Examples](https://github.com/SinergiaTIC/Sinergia
 | Un módulo no aparece en `get_available_modules` | El rol del usuario API no le da acceso |
 | Claude web: "No se pudo conectar" | La URL no acaba en `/api/mcp`, o pusiste algo en Client ID/Secret |
 | Claude web: "Cliente no válido" al autorizar | Cambiaste `MCP_AUTH_SECRET`: borra el conector y vuelve a añadirlo |
-| `docs_*`: "No se puede acceder a la wiki de SinergiaTIC" | La wiki está caída o bloquea las IPs de Vercel. Mira `/api/docs-health` y el workflow *Documentación* en Actions |
+| `docs_*`: "No se puede acceder a la wiki de SinergiaTIC" | La wiki está caída o bloquea las IPs de Vercel. Mira `/api/docs-health` |
 | `docs_search` no encuentra algo que está en la wiki | Solo busca en las páginas enlazadas desde los dos índices del manual; prueba `docs_read` con el título |
 | Claude web pide la clave una y otra vez | La clave tecleada no coincide con `MCP_AUTH_SECRET` (ojo a espacios al copiar) |
 

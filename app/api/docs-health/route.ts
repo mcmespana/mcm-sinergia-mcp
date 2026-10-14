@@ -3,8 +3,7 @@
  *
  * Público a propósito: no expone nada del CRM, solo si este despliegue llega
  * a la wiki y cuántas páginas tiene cada índice. Responde 200 si todo va bien
- * y 503 si no, para que lo pueda vigilar cualquier monitor (ver
- * .github/workflows/docs-health.yml).
+ * y 503 si no.
  */
 
 import { checkDocsHealth } from '@/lib/wiki/manual'
