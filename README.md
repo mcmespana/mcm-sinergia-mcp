@@ -74,6 +74,27 @@ Cómo funciona:
 el despliegue llega a la wiki: `200` si va bien, `503` si no. Para probarlo
 desde tu máquina: `npm run test:docs -- "texto a buscar"`.
 
+### SQL de solo lectura (solo si están las variables `CRM_BBDD_*`)
+
+| Tool | Para qué |
+|------|----------|
+| `sql_schema` | Lista las tablas de la BBDD del CRM, o describe una (columnas, índices y su tabla `_cstm`) |
+| `sql_query` | Ejecuta una consulta de lectura (`SELECT`, `WITH`, `SHOW`, `DESCRIBE`, `EXPLAIN`) directamente contra MySQL |
+
+Sirve para probar las queries que usan otras herramientas (área privada,
+Comunica Tools…) y para cruces y agregados que la API V8 no permite. La
+**escritura sigue yendo siempre por la API**. Barreras:
+
+- El usuario de BBDD es de solo lectura.
+- Solo se admite una sentencia de lectura por llamada (se rechazan `INSERT`,
+  `UPDATE`, `INTO OUTFILE`, `FOR UPDATE`, varias sentencias…).
+- Cada consulta corre en una transacción `READ ONLY`, con un tope de 25 s y de
+  500 filas devueltas (100 por defecto). Los textos largos se truncan.
+
+Sin `CRM_BBDD_IP`, `CRM_BBDD_USER` y `CRM_BBDD_PASS` estas tools ni se registran.
+Ojo: si el servidor MySQL filtra por IP, tiene que aceptar las de Vercel.
+Para probar desde tu máquina: `npm run test:db -- "SELECT COUNT(*) FROM contacts"`.
+
 ### Borrado
 
 No existe ninguna tool de borrado, no hay tanta necesidad de arriesgar a que un agente se ponga a borrar cositas :)
@@ -174,6 +195,9 @@ cp .env.example .env.local
 | `MCP_AUTH_SECRET` | Sí | Secreto propio de este servidor. Genéralo igual que el anterior, con `openssl rand -hex 32` o el generador web |
 | `ALLOW_WRITES` | No | `false` por defecto; `true` registra las tools de escritura |
 | `PUBLIC_BASE_URL` | No | Solo con dominio propio, para fijar la URL que anuncia el descubrimiento OAuth |
+| `CRM_BBDD_IP` / `CRM_BBDD_PORT` / `CRM_BBDD_USER` / `CRM_BBDD_PASS` | No | BBDD MySQL de solo lectura del CRM; activan `sql_schema` y `sql_query` |
+| `CRM_BBDD_NAME` | No | Base de datos a usar; si falta, la única que vea el usuario |
+| `CRM_BBDD_SSL` | No | `true` si el servidor MySQL exige TLS |
 | `WIKI_URL` | No | URL de la wiki de documentación. Por defecto `https://wiki.sinergiatic.org` |
 
 `MCP_AUTH_SECRET` es distinto del cliente OAuth2 del CRM: es la clave de
@@ -322,6 +346,8 @@ lib/
   mcp/auth.ts            Comparación en tiempo constante contra MCP_AUTH_SECRET
   mcp/tools.ts           Definición y registro de las tools (flag de escritura)
   mcp/docs-tools.ts      Tools de documentación (docs_index, docs_search, docs_read)
+  mcp/sql-tools.ts       Tools SQL de solo lectura (sql_schema, sql_query)
+  db/client.ts           Conexión MySQL, validación de solo lectura y límites
   oauth/tokens.ts        Firma y verificación HMAC de los artefactos OAuth
   sinergia/auth.ts       OAuth2 contra el CRM: login, refresh y caché de token
   sinergia/client.ts     Cliente HTTP de la API V8, errores y reintento en 401
@@ -333,6 +359,7 @@ lib/
 app/api/docs-health/     Estado de la conexión con la wiki
 scripts/test-auth.ts     Smoke test de credenciales
 scripts/test-docs.ts     Smoke test de la documentación
+scripts/test-db.ts       Smoke test de la conexión a la BBDD
 ```
 
 

@@ -96,3 +96,40 @@ export function writesAllowed(): boolean {
   const raw = readEnv('ALLOW_WRITES')?.toLowerCase()
   return raw === 'true' || raw === '1' || raw === 'yes'
 }
+
+export interface DbConfig {
+  host: string
+  port: number
+  user: string
+  password: string
+  /** Si falta, se usa la única base de datos que vea el usuario. */
+  database?: string
+  ssl: boolean
+}
+
+/**
+ * Las tools SQL solo se registran si están las credenciales de la BBDD de
+ * solo lectura (CRM_BBDD_IP, CRM_BBDD_USER, CRM_BBDD_PASS).
+ */
+export function dbConfigured(): boolean {
+  return Boolean(readEnv('CRM_BBDD_IP') && readEnv('CRM_BBDD_USER') && readEnv('CRM_BBDD_PASS'))
+}
+
+export function getDbConfig(): DbConfig {
+  const rawPort = readEnv('CRM_BBDD_PORT') ?? '3306'
+  const port = Number(rawPort)
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new ConfigError(`CRM_BBDD_PORT no es un puerto válido: "${rawPort}"`)
+  }
+  const ssl = readEnv('CRM_BBDD_SSL')?.toLowerCase()
+
+  return {
+    host: requireEnv('CRM_BBDD_IP'),
+    port,
+    user: requireEnv('CRM_BBDD_USER'),
+    // Sin trim: una contraseña puede empezar o acabar en espacio.
+    password: process.env.CRM_BBDD_PASS ?? requireEnv('CRM_BBDD_PASS'),
+    database: readEnv('CRM_BBDD_NAME'),
+    ssl: ssl === 'true' || ssl === '1' || ssl === 'yes',
+  }
+}
