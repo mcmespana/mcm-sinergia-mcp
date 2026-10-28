@@ -32,7 +32,7 @@ function isEmptyValue(value: unknown): boolean {
 
 function truncate(value: unknown): unknown {
   if (typeof value === 'string' && value.length > MAX_FIELD_CHARS) {
-    return `${value.slice(0, MAX_FIELD_CHARS)}… [truncado, ${value.length} caracteres]`
+    return `${value.slice(0, MAX_FIELD_CHARS)}… [truncado, ${value.length} caracteres: léelo entero con get_field_full]`
   }
   return value
 }

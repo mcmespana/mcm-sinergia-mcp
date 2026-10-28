@@ -16,6 +16,7 @@
 
 import mysql from 'mysql2'
 import { MAX_FIELD_CHARS, getDbConfig } from '../config'
+import { chunkField, type FieldChunk, type FieldFormat } from '../field-chunk'
 import { SinergiaError, SinergiaInputError } from '../sinergia/errors'
 
 /** Error al conectar o al ejecutar SQL contra la BBDD. */
@@ -77,7 +78,7 @@ function compactValue(value: unknown): unknown {
     return value.length <= 64 ? `0x${value.toString('hex')}` : `[binario, ${value.length} bytes]`
   }
   if (typeof value === 'string' && value.length > MAX_FIELD_CHARS) {
-    return `${value.slice(0, MAX_FIELD_CHARS)}… [truncado, ${value.length} caracteres]`
+    return `${value.slice(0, MAX_FIELD_CHARS)}… [truncado, ${value.length} caracteres: léelo entero con sql_read_field]`
   }
   return value
 }
@@ -263,5 +264,63 @@ export async function describeSchema(options: { table?: string; nameContains?: s
           }
         : {}),
     }
+  })
+}
+
+/**
+ * Lee una columna de una fila, entera y troceada por offset. Si la columna no
+ * está en la tabla pero sí en <tabla>_cstm (campos custom), se lee de ahí.
+ */
+export async function readFullColumn(options: {
+  table: string
+  id: string
+  column: string
+  idColumn?: string
+  offset?: number
+  maxChars?: number
+  format?: FieldFormat
+}): Promise<FieldChunk & { tabla: string; id: string }> {
+  for (const name of [options.table, options.column, options.idColumn ?? 'id']) {
+    if (!IDENTIFIER.test(name)) {
+      throw new SinergiaInputError(`Identificador no válido: "${name}"`)
+    }
+  }
+
+  return withConnection(async (conn) => {
+    const hasColumn = async (table: string, column: string) =>
+      (
+        await run<unknown[]>(
+          conn,
+          `SELECT 1 FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+          [table, column],
+        )
+      ).length > 0
+
+    let table = options.table
+    let idColumn = options.idColumn ?? 'id'
+    if (!(await hasColumn(table, options.column))) {
+      const cstm = `${options.table}_cstm`
+      if (!options.idColumn && (await hasColumn(cstm, options.column))) {
+        table = cstm
+        idColumn = 'id_c'
+      } else {
+        throw new SinergiaInputError(
+          `La columna "${options.column}" no existe en ${options.table}${options.idColumn ? '' : ` ni en ${cstm}`}. Compruébalo con sql_schema.`,
+        )
+      }
+    }
+
+    const rows = await run<Array<Record<string, unknown>>>(
+      conn,
+      `SELECT ${mysql.escapeId(options.column)} AS valor FROM ${mysql.escapeId(table)}
+        WHERE ${mysql.escapeId(idColumn)} = ? LIMIT 2`,
+      [options.id],
+    )
+    if (rows.length === 0) {
+      throw new SinergiaInputError(`No hay ninguna fila en ${table} con ${idColumn} = "${options.id}".`)
+    }
+
+    return { tabla: table, id: options.id, ...chunkField(options.column, rows[0].valor, options) }
   })
 }

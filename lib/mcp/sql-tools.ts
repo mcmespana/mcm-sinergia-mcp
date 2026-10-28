@@ -9,7 +9,8 @@
 
 import { z } from 'zod'
 import { dbConfigured } from '../config'
-import { DEFAULT_MAX_ROWS, MAX_ROWS, describeSchema, runReadQuery } from '../db/client'
+import { DEFAULT_MAX_ROWS, MAX_ROWS, describeSchema, readFullColumn, runReadQuery } from '../db/client'
+import { chunkInputShape } from '../field-chunk'
 import { guarded, type ToolServer } from './tools'
 
 const queryInput = z.object({
@@ -39,6 +40,19 @@ const schemaInput = z.object({
     .describe('Solo al listar tablas: filtra por nombre, p.ej. "stic_" o "contacts".'),
 })
 
+const readFieldInput = z.object({
+  table: z.string().describe('Tabla, p.ej. "emails_text" (el cuerpo de los emails está ahí, con email_id como clave) o "contacts".'),
+  id: z.string().describe('Valor de la clave de la fila.'),
+  column: z
+    .string()
+    .describe('Columna a leer entera, p.ej. "description_html". Si es un campo custom (_c) se busca sola en <tabla>_cstm.'),
+  id_column: z
+    .string()
+    .optional()
+    .describe('Columna clave si no es "id", p.ej. "email_id" en emails_text.'),
+  ...chunkInputShape,
+})
+
 export function registerSqlTools(server: ToolServer): void {
   if (!dbConfigured()) {
     return
@@ -58,6 +72,27 @@ export function registerSqlTools(server: ToolServer): void {
   )
 
   server.registerTool(
+    'sql_read_field',
+    {
+      title: 'Leer una columna completa (SQL)',
+      description:
+        'Lee UNA columna de UNA fila entera, sin el recorte a 800 caracteres de sql_query. Pensado para textos largos como el HTML de un email (tabla emails_text, id_column "email_id", columna "description_html"). Si no cabe en un trozo, la respuesta trae "siguiente_offset": vuelve a llamar con ese offset hasta que no haya más. Con format="text" se convierte el HTML a texto plano.',
+      inputSchema: readFieldInput,
+    },
+    guarded(async (args: z.infer<typeof readFieldInput>) =>
+      readFullColumn({
+        table: args.table,
+        id: args.id,
+        column: args.column,
+        idColumn: args.id_column,
+        offset: args.offset,
+        maxChars: args.max_chars,
+        format: args.format,
+      }),
+    ),
+  )
+
+  server.registerTool(
     'sql_query',
     {
       title: 'Consulta SQL (solo lectura)',
@@ -70,7 +105,7 @@ export function registerSqlTools(server: ToolServer): void {
         '- Las relaciones N:M están en tablas intermedias (p.ej. stic_registrations_contacts_c, con columnas *_ida / *_idb).',
         '- Las fechas se guardan en UTC.',
         '- Los desplegables guardan la clave, no la etiqueta.',
-        'Cada llamada corre en una transacción READ ONLY con un tiempo máximo de 25 s.',
+        'Cada llamada corre en una transacción READ ONLY con un tiempo máximo de 25 s.\nLos textos de más de 800 caracteres se recortan: para leer uno entero usa sql_read_field.',
       ].join('\n'),
       inputSchema: queryInput,
     },
