@@ -74,7 +74,7 @@ Cómo funciona:
 el despliegue llega a la wiki: `200` si va bien, `503` si no. Para probarlo
 desde tu máquina: `npm run test:docs -- "texto a buscar"`.
 
-### SQL de solo lectura (solo si están las variables `BBDD_*`)
+### SQL de solo lectura (solo si están las variables `CRM_BBDD_*`)
 
 | Tool | Para qué |
 |------|----------|
@@ -91,7 +91,7 @@ Comunica Tools…) y para cruces y agregados que la API V8 no permite. La
 - Cada consulta corre en una transacción `READ ONLY`, con un tope de 25 s y de
   500 filas devueltas (100 por defecto). Los textos largos se truncan.
 
-Sin `BBDD_IP`, `BBDD_USER` y `BBDD_PASS` estas tools ni se registran.
+Sin `CRM_BBDD_IP`, `CRM_BBDD_USER` y `CRM_BBDD_PASS` estas tools ni se registran.
 Ojo: si el servidor MySQL filtra por IP, tiene que aceptar las de Vercel.
 Para probar desde tu máquina: `npm run test:db -- "SELECT COUNT(*) FROM contacts"`.
 
@@ -195,9 +195,9 @@ cp .env.example .env.local
 | `MCP_AUTH_SECRET` | Sí | Secreto propio de este servidor. Genéralo igual que el anterior, con `openssl rand -hex 32` o el generador web |
 | `ALLOW_WRITES` | No | `false` por defecto; `true` registra las tools de escritura |
 | `PUBLIC_BASE_URL` | No | Solo con dominio propio, para fijar la URL que anuncia el descubrimiento OAuth |
-| `BBDD_IP` / `BBDD_PORT` / `BBDD_USER` / `BBDD_PASS` | No | BBDD MySQL de solo lectura del CRM; activan `sql_schema` y `sql_query` |
-| `BBDD_NAME` | No | Base de datos a usar; si falta, la única que vea el usuario |
-| `BBDD_SSL` | No | `true` si el servidor MySQL exige TLS |
+| `CRM_BBDD_IP` / `CRM_BBDD_PORT` / `CRM_BBDD_USER` / `CRM_BBDD_PASS` | No | BBDD MySQL de solo lectura del CRM; activan `sql_schema` y `sql_query` |
+| `CRM_BBDD_NAME` | No | Base de datos a usar; si falta, la única que vea el usuario |
+| `CRM_BBDD_SSL` | No | `true` si el servidor MySQL exige TLS |
 | `WIKI_URL` | No | URL de la wiki de documentación. Por defecto `https://wiki.sinergiatic.org` |
 
 `MCP_AUTH_SECRET` es distinto del cliente OAuth2 del CRM: es la clave de

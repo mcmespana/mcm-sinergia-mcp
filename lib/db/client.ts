@@ -136,13 +136,13 @@ async function withConnection<T>(fn: (conn: mysql.Connection) => Promise<T>): Pr
   const conn = connect()
   try {
     if (!getDbConfig().database) {
-      // Sin BBDD_NAME: si el usuario solo ve una base de datos (lo normal), se usa esa.
+      // Sin CRM_BBDD_NAME: si el usuario solo ve una base de datos (lo normal), se usa esa.
       const dbs = (await run<Array<Record<string, string>>>(conn, 'SHOW DATABASES'))
         .map((row) => Object.values(row)[0])
         .filter((name) => !SYSTEM_SCHEMAS.has(name.toLowerCase()))
       if (dbs.length !== 1) {
         throw new DbError(
-          `No se ha definido BBDD_NAME y el usuario ve ${dbs.length} bases de datos (${dbs.join(', ')}). Define BBDD_NAME con la del CRM.`,
+          `No se ha definido CRM_BBDD_NAME y el usuario ve ${dbs.length} bases de datos (${dbs.join(', ')}). Define CRM_BBDD_NAME con la del CRM.`,
         )
       }
       await run(conn, `USE ${mysql.escapeId(dbs[0])}`)

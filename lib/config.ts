@@ -109,27 +109,27 @@ export interface DbConfig {
 
 /**
  * Las tools SQL solo se registran si están las credenciales de la BBDD de
- * solo lectura (BBDD_IP, BBDD_USER, BBDD_PASS).
+ * solo lectura (CRM_BBDD_IP, CRM_BBDD_USER, CRM_BBDD_PASS).
  */
 export function dbConfigured(): boolean {
-  return Boolean(readEnv('BBDD_IP') && readEnv('BBDD_USER') && readEnv('BBDD_PASS'))
+  return Boolean(readEnv('CRM_BBDD_IP') && readEnv('CRM_BBDD_USER') && readEnv('CRM_BBDD_PASS'))
 }
 
 export function getDbConfig(): DbConfig {
-  const rawPort = readEnv('BBDD_PORT') ?? '3306'
+  const rawPort = readEnv('CRM_BBDD_PORT') ?? '3306'
   const port = Number(rawPort)
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    throw new ConfigError(`BBDD_PORT no es un puerto válido: "${rawPort}"`)
+    throw new ConfigError(`CRM_BBDD_PORT no es un puerto válido: "${rawPort}"`)
   }
-  const ssl = readEnv('BBDD_SSL')?.toLowerCase()
+  const ssl = readEnv('CRM_BBDD_SSL')?.toLowerCase()
 
   return {
-    host: requireEnv('BBDD_IP'),
+    host: requireEnv('CRM_BBDD_IP'),
     port,
-    user: requireEnv('BBDD_USER'),
+    user: requireEnv('CRM_BBDD_USER'),
     // Sin trim: una contraseña puede empezar o acabar en espacio.
-    password: process.env.BBDD_PASS ?? requireEnv('BBDD_PASS'),
-    database: readEnv('BBDD_NAME'),
+    password: process.env.CRM_BBDD_PASS ?? requireEnv('CRM_BBDD_PASS'),
+    database: readEnv('CRM_BBDD_NAME'),
     ssl: ssl === 'true' || ssl === '1' || ssl === 'yes',
   }
 }

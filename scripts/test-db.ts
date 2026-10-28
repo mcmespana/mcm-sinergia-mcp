@@ -4,7 +4,7 @@
  *   npm run test:db
  *   npm run test:db -- "SELECT COUNT(*) AS n FROM contacts WHERE deleted = 0"
  *
- * Necesita BBDD_IP, BBDD_PORT, BBDD_USER y BBDD_PASS (y BBDD_NAME si el
+ * Necesita CRM_BBDD_IP, CRM_BBDD_PORT, CRM_BBDD_USER y CRM_BBDD_PASS (y CRM_BBDD_NAME si el
  * usuario ve más de una base de datos). Ojo: el servidor de BBDD puede
  * aceptar solo ciertas IPs.
  */

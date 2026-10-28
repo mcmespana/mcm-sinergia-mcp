@@ -1,6 +1,6 @@
 /**
  * Tools MCP de consulta directa (solo lectura) a la base de datos de
- * SinergiaCRM. Solo se registran si están las variables BBDD_*.
+ * SinergiaCRM. Solo se registran si están las variables CRM_BBDD_*.
  *
  * Sirven para explorar el modelo de datos y probar las queries que luego usan
  * otras herramientas (área privada, Comunica Tools…). La escritura sigue
