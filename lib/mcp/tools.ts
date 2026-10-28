@@ -9,6 +9,7 @@
 
 import { z } from 'zod'
 import { MAX_PAGE_SIZE, writesAllowed } from '../config'
+import { chunkInputShape } from '../field-chunk'
 import { describeError } from '../sinergia/errors'
 import { FILTER_OPERATORS, LOGICAL_OPERATORS } from '../sinergia/query'
 import {
@@ -16,6 +17,7 @@ import {
   getAvailableModules,
   getEntry,
   getEntryList,
+  getFieldFull,
   getModuleFields,
   getRelationships,
   setRelationship,
@@ -119,6 +121,13 @@ const entryInput = z.object({
   fields: fieldsField,
 })
 
+const fieldFullInput = z.object({
+  module: moduleField,
+  id: idField,
+  field: z.string().describe('Nombre técnico del campo a leer entero, p.ej. "description_html" en Emails.'),
+  ...chunkInputShape,
+})
+
 const entryListInput = z.object({
   module: moduleField,
   filter: filterSchema.optional(),
@@ -202,6 +211,26 @@ export function registerSinergiaTools(server: ToolServer): void {
     },
     guarded(async ({ module, id, fields }: z.infer<typeof entryInput>) =>
       getEntry(module, id, fields),
+    ),
+  )
+
+  server.registerTool(
+    'get_field_full',
+    {
+      title: 'Leer un campo completo',
+      description:
+        'Lee UN campo de UN registro entero, sin el recorte a 800 caracteres de get_entry y get_entry_list. Pensado para valores largos como el HTML de un email (Emails.description_html) o descripciones extensas. Si el valor no cabe en un trozo, la respuesta trae "siguiente_offset": vuelve a llamar con ese offset hasta que no haya más. Con format="text" se convierte el HTML a texto plano, que ocupa mucho menos.',
+      inputSchema: fieldFullInput,
+    },
+    guarded(async (args: z.infer<typeof fieldFullInput>) =>
+      getFieldFull({
+        module: args.module,
+        id: args.id,
+        field: args.field,
+        offset: args.offset,
+        maxChars: args.max_chars,
+        format: args.format,
+      }),
     ),
   )
 

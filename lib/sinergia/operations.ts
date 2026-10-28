@@ -27,6 +27,7 @@ import {
   type StructuredFilter,
 } from './query'
 import { SinergiaInputError } from './errors'
+import { chunkField, type FieldChunk, type FieldFormat } from '../field-chunk'
 import type { JsonApiDocument } from './types'
 
 export async function getAvailableModules() {
@@ -61,6 +62,40 @@ export async function getEntry(
   }
 
   return flattenResource(data, { includeRelationshipNames: true })
+}
+
+/**
+ * Un único campo de un registro, entero (sin el recorte de los listados) y
+ * troceado por offset para los valores muy largos.
+ */
+export async function getFieldFull(options: {
+  module: string
+  id: string
+  field: string
+  offset?: number
+  maxChars?: number
+  format?: FieldFormat
+}): Promise<FieldChunk & { module: string; id: string }> {
+  const moduleName = assertModuleName(options.module)
+  const recordId = assertRecordId(options.id)
+  const field = assertFieldName(options.field)
+
+  const document = await apiRequest<JsonApiDocument>('GET', `/module/${moduleName}/${recordId}`, {
+    query: buildFieldsParams(moduleName, [field]),
+  })
+
+  const data = Array.isArray(document.data) ? document.data[0] : document.data
+  if (!data) {
+    throw new SinergiaInputError(`No se encontró el registro ${recordId} en ${moduleName}.`)
+  }
+  const attributes = data.attributes ?? {}
+  if (!(field in attributes)) {
+    throw new SinergiaInputError(
+      `El módulo ${moduleName} no ha devuelto el campo "${field}". Compruébalo con get_module_fields.`,
+    )
+  }
+
+  return { module: moduleName, id: recordId, ...chunkField(field, attributes[field], options) }
 }
 
 export interface EntryListOptions {

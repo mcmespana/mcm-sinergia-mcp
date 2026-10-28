@@ -38,6 +38,7 @@ para que el agente pueda consultar cómo funciona algo antes de explicarlo.
 | `get_module_fields` | `GET /Api/V8/meta/fields/{module}` | Campos de un módulo (tipo, obligatorio, si es custom) |
 | `get_entry` | `GET /Api/V8/module/{module}/{id}` | Un registro por id |
 | `get_entry_list` | `GET /Api/V8/module/{module}` | Listado con filtros, orden y paginación |
+| `get_field_full` | `GET /Api/V8/module/{module}/{id}?fields[…]` | Un campo de un registro **entero** (sin recortar), en trozos |
 | `get_relationships` | `GET /Api/V8/module/{module}/{id}/relationships/{rel}` | Registros relacionados |
 
 ### Escritura (solo con variable de entorno `ALLOW_WRITES=true`, ver [más abajo](#6-activar-escritura))
@@ -80,6 +81,7 @@ desde tu máquina: `npm run test:docs -- "texto a buscar"`.
 |------|----------|
 | `sql_schema` | Lista las tablas de la BBDD del CRM, o describe una (columnas, índices y su tabla `_cstm`) |
 | `sql_query` | Ejecuta una consulta de lectura (`SELECT`, `WITH`, `SHOW`, `DESCRIBE`, `EXPLAIN`) directamente contra MySQL |
+| `sql_read_field` | Una columna de una fila **entera** (sin recortar), en trozos; busca sola en `<tabla>_cstm` |
 
 Sirve para probar las queries que usan otras herramientas (área privada,
 Comunica Tools…) y para cruces y agregados que la API V8 no permite. La
@@ -94,6 +96,21 @@ Comunica Tools…) y para cruces y agregados que la API V8 no permite. La
 Sin `CRM_BBDD_IP`, `CRM_BBDD_USER` y `CRM_BBDD_PASS` estas tools ni se registran.
 Ojo: si el servidor MySQL filtra por IP, tiene que aceptar las de Vercel.
 Para probar desde tu máquina: `npm run test:db -- "SELECT COUNT(*) FROM contacts"`.
+
+### Campos largos (emails en HTML, descripciones…)
+
+Los listados recortan cada texto a 800 caracteres para no llenar el contexto
+del modelo, y lo marcan con `[truncado, N caracteres: léelo entero con …]`.
+Para leer un valor entero están `get_field_full` (API) y `sql_read_field` (SQL):
+
+- Devuelven trozos de 20 000 caracteres (hasta 40 000 con `max_chars`). Si
+  queda más, la respuesta trae `siguiente_offset` y el modelo vuelve a llamar
+  con ese `offset` hasta tenerlo todo.
+- Con `format: "text"` convierten el HTML a texto plano (sin estilos ni
+  etiquetas, enlaces como `texto (url)`), que en un email suele ocupar una
+  fracción del original.
+- El cuerpo de los emails: módulo `Emails`, campo `description_html`; o por
+  SQL, tabla `emails_text`, `id_column: "email_id"`.
 
 ### Borrado
 
@@ -348,6 +365,7 @@ lib/
   mcp/docs-tools.ts      Tools de documentación (docs_index, docs_search, docs_read)
   mcp/sql-tools.ts       Tools SQL de solo lectura (sql_schema, sql_query)
   db/client.ts           Conexión MySQL, validación de solo lectura y límites
+  field-chunk.ts         Lectura troceada de campos largos y HTML → texto
   oauth/tokens.ts        Firma y verificación HMAC de los artefactos OAuth
   sinergia/auth.ts       OAuth2 contra el CRM: login, refresh y caché de token
   sinergia/client.ts     Cliente HTTP de la API V8, errores y reintento en 401
