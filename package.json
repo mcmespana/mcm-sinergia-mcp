@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:docs": "tsx scripts/test-docs.ts",
-    "test:db": "tsx scripts/test-db.ts"
+    "test:db": "tsx scripts/test-db.ts",
+    "test:guide": "tsx scripts/test-guide.ts",
+    "guide:generate": "tsx scripts/generate-fields-guide.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",

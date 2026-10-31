@@ -16,6 +16,7 @@ import type { AuthInfo } from '@modelcontextprotocol/server'
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { isAuthorizedBearer } from '@/lib/mcp/auth'
 import { registerDocsTools } from '@/lib/mcp/docs-tools'
+import { registerGuideTools } from '@/lib/mcp/guide-tools'
 import { registerSqlTools } from '@/lib/mcp/sql-tools'
 import { registerSinergiaTools, type ToolServer } from '@/lib/mcp/tools'
 import { MCP_SCOPE, readAccessToken } from '@/lib/oauth/tokens'
@@ -27,6 +28,7 @@ export const maxDuration = 60
 
 const handler = createMcpHandler(
   (server) => {
+    registerGuideTools(server as unknown as ToolServer)
     registerSinergiaTools(server as unknown as ToolServer)
     registerDocsTools(server as unknown as ToolServer)
     registerSqlTools(server as unknown as ToolServer)
@@ -36,6 +38,10 @@ const handler = createMcpHandler(
       name: 'sinergiacrm',
       version: '0.1.0',
     },
+    // Lo lee el cliente al conectar: así el agente sabe que hay chuleta antes
+    // de ponerse a explorar módulo a módulo.
+    instructions:
+      'Servidor de SinergiaCRM (SuiteCRM 7.x). Antes de pedir campos o escribir, llama a crm_fields_guide con los módulos que necesites: dice los nombres exactos de los campos de esta instancia y las claves de los desplegables (la API no las devuelve ni las valida). Pide siempre "fields" para no traer todos los campos. get_module_fields solo para lo que no esté en la guía.',
   },
 )
 

@@ -30,6 +30,16 @@ para que el agente pueda consultar cómo funciona algo antes de explicarlo.
 
 ## Qué expone
 
+### Guía de campos de tu instancia (siempre disponible)
+
+| Tool | Para qué |
+|------|----------|
+| `crm_fields_guide` | La chuleta de **tu** CRM (`CAMPOS-RESUMEN.md`): qué campos usar en cada módulo, las claves de los desplegables (que la API ni devuelve ni valida) y las trampas. Entera o solo los módulos que se pidan |
+
+El servidor le dice al agente, al conectar, que empiece por aquí: le ahorra la ronda de `get_module_fields` de
+cada conversación. La guía es de cada organización y se lee de `CRM_FIELDS_GUIDE_URL`; para crear la tuya hay un
+generador (`npm run guide:generate`). Todo en [`guia/README.md`](guia/README.md).
+
 ### Lectura (siempre disponible)
 
 | Tool | Endpoint V8 | Para qué |
@@ -216,6 +226,7 @@ cp .env.example .env.local
 | `CRM_BBDD_NAME` | No | Base de datos a usar; si falta, la única que vea el usuario |
 | `CRM_BBDD_SSL` | No | `true` si el servidor MySQL exige TLS |
 | `WIKI_URL` | No | URL de la wiki de documentación. Por defecto `https://wiki.sinergiatic.org` |
+| `CRM_FIELDS_GUIDE_URL` | No | URL del `CAMPOS-RESUMEN.md` de tu organización, para `crm_fields_guide` ([`guia/README.md`](guia/README.md)) |
 
 `MCP_AUTH_SECRET` es distinto del cliente OAuth2 del CRM: es la clave de
 entrada a *este* servidor MCP, y hace tres papeles — bearer estático, clave
@@ -364,6 +375,8 @@ lib/
   mcp/tools.ts           Definición y registro de las tools (flag de escritura)
   mcp/docs-tools.ts      Tools de documentación (docs_index, docs_search, docs_read)
   mcp/sql-tools.ts       Tools SQL de solo lectura (sql_schema, sql_query)
+  mcp/guide-tools.ts     Tool crm_fields_guide
+  fields-guide.ts        Lectura, caché y troceado por módulo de la guía de campos
   db/client.ts           Conexión MySQL, validación de solo lectura y límites
   field-chunk.ts         Lectura troceada de campos largos y HTML → texto
   oauth/tokens.ts        Firma y verificación HMAC de los artefactos OAuth
@@ -378,6 +391,9 @@ app/api/docs-health/     Estado de la conexión con la wiki
 scripts/test-auth.ts     Smoke test de credenciales
 scripts/test-docs.ts     Smoke test de la documentación
 scripts/test-db.ts       Smoke test de la conexión a la BBDD
+scripts/test-guide.ts    Comprueba la guía de campos (fuente, módulos, forma)
+scripts/generate-fields-guide.ts  Borrador de la guía desde la API V8
+guia/README.md           Cómo montar la guía de campos de tu organización
 ```
 
 
