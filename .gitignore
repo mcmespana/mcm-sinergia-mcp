@@ -15,3 +15,6 @@ next-env.d.ts
 .DS_Store
 npm-debug.log*
 yarn-error.log*
+
+# La guía de campos es de cada organización (ver guia/README.md)
+guia/CAMPOS-RESUMEN.md
